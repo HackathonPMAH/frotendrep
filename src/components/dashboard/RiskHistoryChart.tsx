@@ -1,7 +1,7 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { TrendingUp } from "lucide-react";
 
-const DATA = [
+const FALLBACK = [
   { time: "0:00", s1: 10, s2: 15, s3: 5 },
   { time: "0:30", s1: 25, s2: 20, s3: 18 },
   { time: "1:00", s1: 35, s2: 30, s3: 28 },
@@ -27,25 +27,34 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-const RiskHistoryChart = () => (
-  <div className="glass-panel rounded-xl p-5">
-    <div className="flex items-center gap-2 mb-4">
-      <TrendingUp className="w-4 h-4 text-neon-purple" />
-      <span className="font-mono text-[11px] text-muted-foreground tracking-wider">RISK HISTORY — 3 SESSIONS</span>
+interface Props {
+  data?: { time: string; s1: number; s2: number; s3: number }[];
+  isLoading?: boolean;
+}
+
+const RiskHistoryChart = ({ data, isLoading }: Props) => {
+  const chartData = data?.length ? data : FALLBACK;
+
+  return (
+    <div className={`glass-panel rounded-xl p-5 transition-opacity ${isLoading ? "opacity-75" : "opacity-100"}`}>
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingUp className="w-4 h-4 text-neon-purple" />
+        <span className="font-mono text-[11px] text-muted-foreground tracking-wider">RISK HISTORY — 3 SESSIONS</span>
+      </div>
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={chartData}>
+          <CartesianGrid stroke="hsl(270 20% 20% / 0.6)" strokeDasharray="3 3" />
+          <XAxis dataKey="time" tick={{ fill: "#6b5f80", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: "#6b5f80", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend wrapperStyle={{ fontSize: 10, fontFamily: "JetBrains Mono" }} iconSize={8} />
+          <Line type="monotone" dataKey="s1" name="Session 1" stroke="#c084fc" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="s2" name="Session 2" stroke="#a855f7" strokeWidth={2} dot={false} />
+          <Line type="monotone" dataKey="s3" name="Session 3" stroke="#facc15" strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
-    <ResponsiveContainer width="100%" height={250}>
-      <LineChart data={DATA}>
-        <CartesianGrid stroke="hsl(270 20% 20% / 0.6)" strokeDasharray="3 3" />
-        <XAxis dataKey="time" tick={{ fill: "#6b5f80", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fill: "#6b5f80", fontSize: 10, fontFamily: "JetBrains Mono" }} axisLine={false} tickLine={false} />
-        <Tooltip content={<CustomTooltip />} />
-        <Legend wrapperStyle={{ fontSize: 10, fontFamily: "JetBrains Mono" }} iconSize={8} />
-        <Line type="monotone" dataKey="s1" name="Session 1" stroke="#c084fc" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="s2" name="Session 2" stroke="#a855f7" strokeWidth={2} dot={false} />
-        <Line type="monotone" dataKey="s3" name="Session 3" stroke="#facc15" strokeWidth={2} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
-  </div>
-);
+  );
+};
 
 export default RiskHistoryChart;
