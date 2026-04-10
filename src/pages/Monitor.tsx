@@ -102,7 +102,7 @@ const Monitor = () => {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => navigate("/dashboard")}
-        className="fixed top-3 right-3 z-50 glass-panel border border-neon-purple/50 rounded-lg px-3 py-2 flex items-center gap-2 hover:bg-neon-purple/15 glow-purple"
+        className="fixed bottom-3 right-3 z-50 glass-panel border border-neon-purple/50 rounded-lg px-3 py-2 flex items-center gap-2 hover:bg-neon-purple/15 glow-purple"
       >
         <LayoutDashboard className="w-4 h-4 text-neon-purple" />
         <span className="font-mono text-[11px] text-neon-purple">Dashboard</span>
@@ -113,7 +113,7 @@ const Monitor = () => {
         <div className="w-[70%] border-r border-border/50 flex flex-col">
           <div className="relative flex-[7] min-h-0">
             <TopOverlay isAnalyzing={isAnalyzing} />
-            <SimulationCanvas isAnalyzing={isAnalyzing} showHeatmap={showHeatmap} />
+            <SimulationCanvas isAnalyzing={isAnalyzing} showHeatmap={showHeatmap} exitsDetected={exitsDetected} />
           </div>
           <MapLegend />
           <ControlPanel
