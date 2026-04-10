@@ -129,10 +129,16 @@ const Monitor = () => {
         </div>
 
         {/* Right panel */}
-        <div className="w-[30%] overflow-y-auto p-3 flex flex-col gap-3">
+        <div className="w-[30%] overflow-hidden p-3 flex flex-col gap-3">
           <RiskPanel riskScore={riskScore} />
-          <LiveUpdatesPanel updates={updates} />
-          <AlertsPanel alerts={alerts} />
+          <div className="flex-1 min-h-0 flex flex-col gap-3">
+            <div className="flex-1 min-h-0 flex flex-col">
+              <LiveUpdatesPanel updates={updates} />
+            </div>
+            <div className="flex-1 min-h-0 flex flex-col">
+              <AlertsPanel alerts={alerts} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
