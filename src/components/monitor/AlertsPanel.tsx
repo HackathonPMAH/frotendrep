@@ -12,7 +12,7 @@ interface Props {
 }
 
 const AlertsPanel = ({ alerts }: Props) => (
-  <div className="glass-panel rounded-xl p-4">
+  <div className="glass-panel rounded-xl p-4 flex flex-col flex-1 min-h-0">
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 text-neon-red" />
