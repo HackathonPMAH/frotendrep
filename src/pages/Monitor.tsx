@@ -8,7 +8,12 @@ import ControlPanel, { type MapLayerMode } from "@/components/monitor/ControlPan
 import RiskPanel from "@/components/monitor/RiskPanel";
 import LiveUpdatesPanel, { type LiveUpdate } from "@/components/monitor/LiveUpdatesPanel";
 import AlertsPanel, { type Alert } from "@/components/monitor/AlertsPanel";
-import { analyzeBaseMap, apiUrl, uploadBaseMap } from "@/lib/api";
+import { analyzeBaseMap, apiUrl, uploadBaseMap, type AnalyzeBaseMapResponse } from "@/lib/api";
+import {
+  computeExitCells,
+  describeExitDirection,
+  heatmapHighDensityFraction,
+} from "@/lib/mapExit";
 
 function mapUiStatus(backend: string): "READY" | "PROCESSING" | "ALERT" {
   if (backend === "CRITICAL") return "ALERT";
@@ -26,7 +31,9 @@ const Monitor = () => {
   const [layerMode, setLayerMode] = useState<MapLayerMode>("base");
   const [baseMap, setBaseMap] = useState<BaseMapState | null>(null);
   const [heatmapMatrix, setHeatmapMatrix] = useState<number[][] | null>(null);
+  const [exitCells, setExitCells] = useState<{ row: number; col: number }[] | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [findingExit, setFindingExit] = useState(false);
 
   const [riskScore, setRiskScore] = useState(0);
   const [status, setStatus] = useState<"READY" | "PROCESSING" | "ALERT">("READY");
@@ -52,6 +59,7 @@ const Monitor = () => {
     setRiskScore(0);
     setStatus("READY");
     setExitsDetected(false);
+    setExitCells(null);
     setUpdates([]);
     setAlerts([]);
   }, []);
@@ -68,6 +76,7 @@ const Monitor = () => {
     setRiskScore(0);
     setStatus("READY");
     setExitsDetected(false);
+    setExitCells(null);
     setUpdates([]);
     setAlerts([]);
 
@@ -84,6 +93,67 @@ const Monitor = () => {
     }
   }, []);
 
+  const applyAnalysisResult = useCallback((data: AnalyzeBaseMapResponse) => {
+    setExitCells(null);
+    const score = Math.round(Number(data.risk?.risk_score ?? 0));
+    setRiskScore(Math.min(100, Math.max(0, score)));
+    const backendStatus = String(data.risk?.status ?? "SAFE");
+    const hm = data.heatmap ?? null;
+    const frac = heatmapHighDensityFraction(hm);
+    const widespreadRed = frac >= 0.2;
+    if (backendStatus === "CRITICAL" || widespreadRed) {
+      setStatus("ALERT");
+    } else {
+      setStatus(mapUiStatus(backendStatus));
+    }
+
+    const hasHotspots = Array.isArray(data.hotspots) && data.hotspots.length > 0;
+    const hasRecs = Array.isArray(data.recommendations) && data.recommendations.length > 0;
+    setExitsDetected(hasHotspots || hasRecs);
+
+    setHeatmapMatrix(hm);
+    setLayerMode("heatmap");
+
+    const recs = data.recommendations ?? [];
+    if (recs.length > 0) {
+      const newLines: LiveUpdate[] = recs.slice(0, 5).map((message) => {
+        const lower = message.toLowerCase();
+        let type: LiveUpdate["type"] = "general";
+        if (lower.includes("exit") || lower.includes("evacuat") || lower.includes("route")) type = "evacuation";
+        else if (lower.includes("choke") || lower.includes("congest") || lower.includes("block")) type = "congestion";
+        else if (lower.includes("density") || lower.includes("crowd")) type = "density";
+        return { type, message, id: ++idRef.current, timestamp: now() };
+      });
+      setUpdates((prev) => [...prev, ...newLines].slice(-25));
+    } else {
+      const f = data.features as Record<string, unknown> | undefined;
+      const msg =
+        f != null
+          ? `Crowd ${Number(f.crowd_size ?? 0)} · max density ${Number(f.max_density ?? 0).toFixed(2)}`
+          : `Analysis complete · risk ${score}`;
+      setUpdates((prev) => [...prev, { type: "general" as const, message: msg, id: ++idRef.current, timestamp: now() }].slice(-25));
+    }
+
+    if (widespreadRed && hm) {
+      const pct = (frac * 100).toFixed(0);
+      const wideMsg = `CRITICAL: ~${pct}% of the map is high-density (red) — evacuate congested areas and steer toward purple exit zones.`;
+      setAlerts((prev) => {
+        if (prev.some((a) => a.message.includes("high-density (red)"))) return prev;
+        return [...prev, { id: ++idRef.current, message: wideMsg, timestamp: now() }].slice(-20);
+      });
+    }
+
+    if (backendStatus === "CRITICAL") {
+      const raw = data.recommendations?.[0];
+      const msg = raw
+        ? raw.toUpperCase().startsWith("CRITICAL")
+          ? raw
+          : `CRITICAL: ${raw}`
+        : `CRITICAL: Risk score ${score} — immediate action required`;
+      setAlerts((prev) => [...prev, { id: ++idRef.current, message: msg, timestamp: now() }].slice(-20));
+    }
+  }, []);
+
   const handleStartAnalysis = useCallback(async () => {
     if (isAnalyzing || !baseMap) return;
 
@@ -93,75 +163,111 @@ const Monitor = () => {
     setUpdates([]);
     setAlerts([]);
     setExitsDetected(false);
+    setExitCells(null);
     setStatus("PROCESSING");
 
     try {
       const data = await analyzeBaseMap();
-      const score = Math.round(Number(data.risk?.risk_score ?? 0));
-      setRiskScore(Math.min(100, Math.max(0, score)));
-      const backendStatus = String(data.risk?.status ?? "SAFE");
-      setStatus(mapUiStatus(backendStatus));
-
-      const hasHotspots = Array.isArray(data.hotspots) && data.hotspots.length > 0;
-      const hasRecs = Array.isArray(data.recommendations) && data.recommendations.length > 0;
-      setExitsDetected(hasHotspots || hasRecs);
-
-      setHeatmapMatrix(data.heatmap ?? null);
-      setLayerMode("heatmap");
-
-      const recs = data.recommendations ?? [];
-      if (recs.length > 0) {
-        const newLines: LiveUpdate[] = recs.slice(0, 5).map((message) => {
-          const lower = message.toLowerCase();
-          let type: LiveUpdate["type"] = "general";
-          if (lower.includes("exit") || lower.includes("evacuat") || lower.includes("route")) type = "evacuation";
-          else if (lower.includes("choke") || lower.includes("congest") || lower.includes("block")) type = "congestion";
-          else if (lower.includes("density") || lower.includes("crowd")) type = "density";
-          return { type, message, id: ++idRef.current, timestamp: now() };
-        });
-        setUpdates((prev) => [...prev, ...newLines].slice(-25));
-      } else {
-        const f = data.features as Record<string, unknown> | undefined;
-        const msg =
-          f != null
-            ? `Crowd ${Number(f.crowd_size ?? 0)} · max density ${Number(f.max_density ?? 0).toFixed(2)}`
-            : `Analysis complete · risk ${score}`;
-        setUpdates((prev) => [...prev, { type: "general" as const, message: msg, id: ++idRef.current, timestamp: now() }].slice(-25));
-      }
-
-      if (backendStatus === "CRITICAL") {
-        const raw = data.recommendations?.[0];
-        const msg = raw
-          ? raw.toUpperCase().startsWith("CRITICAL")
-            ? raw
-            : `CRITICAL: ${raw}`
-          : `CRITICAL: Risk score ${score} — immediate action required`;
-        setAlerts((prev) => [...prev, { id: ++idRef.current, message: msg, timestamp: now() }].slice(-20));
-      }
+      applyAnalysisResult(data);
     } catch (err) {
       setStatus("READY");
       setMapError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setIsAnalyzing(false);
     }
-  }, [baseMap, isAnalyzing]);
+  }, [baseMap, isAnalyzing, applyAnalysisResult]);
 
   const handleToggleLayer = useCallback(() => {
     if (!baseMap) return;
     setLayerMode((m) => (m === "base" ? "heatmap" : "base"));
   }, [baseMap]);
 
-  const handleFindExit = useCallback(() => {
-    setUpdates((prev) => [
-      ...prev,
-      {
-        id: ++idRef.current,
-        type: "evacuation",
-        message: "Manual exit search initiated. Scanning nearest routes...",
-        timestamp: now(),
-      },
-    ]);
-  }, []);
+  const handleFindExit = useCallback(async () => {
+    if (!baseMap) {
+      setUpdates((prev) =>
+        [
+          ...prev,
+          {
+            id: ++idRef.current,
+            type: "evacuation",
+            message: "Upload a base map first, then tap Find Exit.",
+            timestamp: now(),
+          },
+        ].slice(-25),
+      );
+      return;
+    }
+
+    setUpdates((prev) =>
+      [
+        ...prev,
+        {
+          id: ++idRef.current,
+          type: "evacuation",
+          message: "Searching for lowest-congestion perimeter exits…",
+          timestamp: now(),
+        },
+      ].slice(-25),
+    );
+
+    let hm = heatmapMatrix;
+    if (!hm) {
+      setFindingExit(true);
+      setMapError(null);
+      try {
+        const data = await analyzeBaseMap();
+        applyAnalysisResult(data);
+        hm = data.heatmap ?? null;
+      } catch (err) {
+        setMapError(err instanceof Error ? err.message : "Analysis failed");
+        setUpdates((prev) =>
+          [
+            ...prev,
+            {
+              id: ++idRef.current,
+              type: "general",
+              message: "Could not analyze the map to locate exits.",
+              timestamp: now(),
+            },
+          ].slice(-25),
+        );
+        return;
+      } finally {
+        setFindingExit(false);
+      }
+    }
+
+    if (!hm?.length) {
+      setUpdates((prev) =>
+        [
+          ...prev,
+          {
+            id: ++idRef.current,
+            type: "general",
+            message: "No density grid available — run Start Analysis, then try Find Exit again.",
+            timestamp: now(),
+          },
+        ].slice(-25),
+      );
+      return;
+    }
+
+    const cells = computeExitCells(hm);
+    setExitCells(cells);
+    setExitsDetected(true);
+    const desc = describeExitDirection(cells, hm.length, hm[0].length ?? 0);
+    setUpdates((prev) =>
+      [
+        ...prev,
+        {
+          id: ++idRef.current,
+          type: "evacuation",
+          message: `Exit assist: ${desc}`,
+          timestamp: now(),
+        },
+      ].slice(-25),
+    );
+  }, [baseMap, heatmapMatrix, applyAnalysisResult]);
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-background">
@@ -185,6 +291,7 @@ const Monitor = () => {
                 mediaKey={baseMap.id}
                 layerMode={layerMode}
                 heatmap={heatmapMatrix}
+                exitCells={exitCells}
               />
             ) : (
               <SimulationCanvas
@@ -208,6 +315,7 @@ const Monitor = () => {
             hasBaseMap={!!baseMap}
             hasHeatmap={heatmapMatrix !== null}
             isAnalyzing={isAnalyzing}
+            findingExit={findingExit}
             status={status}
             exitsDetected={exitsDetected}
             onToggleLayer={handleToggleLayer}

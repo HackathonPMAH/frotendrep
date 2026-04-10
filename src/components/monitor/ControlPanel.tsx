@@ -8,6 +8,8 @@ interface Props {
   hasBaseMap: boolean;
   hasHeatmap: boolean;
   isAnalyzing: boolean;
+  /** True while Find Exit is running a one-off analysis to build the heatmap. */
+  findingExit?: boolean;
   status: "READY" | "PROCESSING" | "ALERT";
   exitsDetected: boolean;
   onToggleLayer: () => void;
@@ -24,6 +26,7 @@ const ControlPanel = ({
   hasBaseMap,
   hasHeatmap,
   isAnalyzing,
+  findingExit = false,
   status,
   exitsDetected,
   onToggleLayer,
@@ -107,10 +110,24 @@ const ControlPanel = ({
           whileHover={{ scale: 1.02, y: -2 }}
           whileTap={{ scale: 0.97 }}
           onClick={onFindExit}
-          className="glass-panel rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-muted/50"
+          disabled={findingExit || !hasBaseMap}
+          title={
+            !hasBaseMap
+              ? "Upload a base map first"
+              : findingExit
+                ? "Locating exits…"
+                : "Highlight lowest-congestion perimeter exits in purple"
+          }
+          className="glass-panel rounded-xl flex flex-col items-center justify-center gap-2 hover:bg-muted/50 disabled:opacity-45 disabled:pointer-events-none"
         >
-          <Navigation className="w-5 h-5 text-neon-green" />
-          <span className="font-mono text-[10px] text-muted-foreground">Find Exit</span>
+          {findingExit ? (
+            <Loader2 className="w-5 h-5 text-neon-green animate-spin" />
+          ) : (
+            <Navigation className="w-5 h-5 text-neon-green" />
+          )}
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {findingExit ? "Finding…" : "Find Exit"}
+          </span>
         </motion.button>
 
         {/* Start Analysis */}
