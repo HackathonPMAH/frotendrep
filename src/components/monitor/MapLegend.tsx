@@ -3,7 +3,7 @@ const ITEMS = [
   { color: "#facc15", label: "Least Critical" },
   { color: "#f97316", label: "Less Critical" },
   { color: "#ef4444", label: "Critical" },
-  { color: "#a855f7", label: "Exit Place" },
+  { color: "#a855f7", label: "Exit / egress (purple)" },
 ];
 
 const MapLegend = () => (
